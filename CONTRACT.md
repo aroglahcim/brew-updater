@@ -8,7 +8,7 @@ when these facts change; do not leave them only in chat.
 | Command | Contract |
 |---------|----------|
 | `brew-update-check [--force]` | Refresh metadata, count outdated packages, notify. `--force` ignores the once-per-day guard. |
-| `brew-update-run` | Open Terminal and run `brew upgrade`. No arguments are honoured. |
+| `brew-update-run` | Open Terminal and run `brew upgrade -y`. No arguments are honoured. |
 
 Exit codes for the checker:
 
@@ -89,6 +89,8 @@ involved.
   permission and fails with `-1743` on a machine that has never granted it.
 - The generated script contains only the quoted `brew` path from resolution, never
   a package name or notification text.
+- The upgrade command is `brew upgrade -y`: `-y` (`--no-ask`) skips the
+  `Do you want to proceed?` confirmation, so the click alone starts the upgrade.
 - It ends with `exec /bin/zsh -l`, so the window remains open after the upgrade and
   the exit code stays visible.
 
