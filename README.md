@@ -29,8 +29,9 @@ This links the scripts into `~/.local/bin`, renders the LaunchAgent into
   removed.
 - With outdated packages, one notification appears:
   `Dostępne aktualizacje: N. Kliknij, aby uruchomić brew upgrade.`
-- Clicking it opens Terminal and runs a plain `brew upgrade`. The window stays open
-  so the result can be read. A cask that needs a password prompts for it there.
+- Clicking it opens Terminal and runs `brew upgrade -y`, so no `Do you want to
+  proceed?` prompt appears. The window stays open so the result can be read. A
+  cask that needs a password prompts for it there.
 - After one successful check in a day, later runs exit without touching Homebrew.
 
 ## Status and logs
@@ -78,5 +79,6 @@ database is out of scope.
 ## Click behaviour
 
 The runner writes `~/.local/state/brew-updater/upgrade.command` and opens it with
-`open -a Terminal`, so no Automation permission is involved. The window stays open
+`open -a Terminal`, so no Automation permission is involved. The script runs
+`brew upgrade -y`, which skips the interactive confirmation. The window stays open
 after the upgrade and shows the exit code.

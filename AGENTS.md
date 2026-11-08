@@ -7,7 +7,7 @@ user start the upgrade from a notification click.
 
 - **Does:** refresh Homebrew metadata, count outdated formulae and casks, post one
   clickable notification, and on click open an interactive Terminal running
-  `brew upgrade`.
+  `brew upgrade -y`.
 - **Does not:** install or upgrade anything in the background, run `sudo`, change
   authorization databases, use `--greedy`, or act on package names taken from
   notification text or `brew` output.
@@ -73,8 +73,10 @@ There is no build step and no package manager.
   it with `open -a Terminal`. `osascript`/Apple Events is deliberately avoided: it
   needs the Automation permission, which cannot be granted non-interactively and
   fails with `-1743` on a fresh machine.
-- The generated script ends with `exec /bin/zsh -l` so the Terminal window stays
-  open after the upgrade, showing the exit code.
+- The generated script runs `brew upgrade -y`; `-y` (`--no-ask`) skips the
+  interactive confirmation, so the click is the only decision point. It ends with
+  `exec /bin/zsh -l` so the Terminal window stays open after the upgrade, showing
+  the exit code.
 - Keep the LaunchAgent to `RunAtLoad` + `StartInterval` + `StartCalendarInterval`.
   `brew services` cannot express both interval and calendar triggers in one job;
   see `CONTRACT.md`.
@@ -91,7 +93,7 @@ There is no build step and no package manager.
 | Path | Purpose |
 |------|---------|
 | `bin/brew-update-check` | Main checker invoked by launchd |
-| `bin/brew-update-run` | Click target; opens Terminal and runs `brew upgrade` |
+| `bin/brew-update-run` | Click target; opens Terminal and runs `brew upgrade -y` |
 | `launchd/com.aroglahcim.brew-updater.plist.tmpl` | LaunchAgent template with `@@TOKEN@@` placeholders |
 | `install.sh` | Symlinks, plist rendering, `launchctl bootstrap` |
 | `uninstall.sh` | `launchctl bootout`, symlink and plist removal, optional purge |
