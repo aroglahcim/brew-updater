@@ -1,0 +1,15 @@
+---
+description: brew-updater agent conventions
+alwaysApply: true
+---
+
+# brew-updater
+
+- Read `AGENTS.md` and `CONTRACT.md` before changing checker, runner, or scheduler behaviour.
+- The checker never upgrades. Only the notification click path runs `brew upgrade`, in a visible Terminal.
+- Open Terminal via `open -a Terminal` on a generated `.command` file; never `osascript`/Apple Events.
+- Detection scope must equal plain `brew upgrade`: formulae and casks, no `--greedy`, pinned excluded.
+- Never touch Homebrew locks or kill another `brew` process; never use `sudo brew`.
+- A failed `brew update`, `brew outdated`, or notification must not record a successful check.
+- Notification click target is a fixed absolute runner path, never built from package names or output.
+- Install modes are standalone `install.sh`, chezmoi external, or a Homebrew tap. Do not invent a fourth.
