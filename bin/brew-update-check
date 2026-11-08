@@ -1,0 +1,340 @@
+#!/bin/zsh
+#
+# brew-update-check — refresh Homebrew metadata and report outdated packages.
+#
+# Never installs or upgrades anything. When outdated packages exist it posts a
+# single clickable notification whose click target is brew-update-run, which
+# opens an interactive Terminal and starts `brew upgrade`.
+#
+# Exit codes:
+#   0   check completed (up-to-date, or notification delivered)
+#   1   check failed (brew update, brew outdated, or notification delivery)
+#   75  another instance holds the lock (temporary failure, retried later)
+#
+# See AGENTS.md and CONTRACT.md in the repository root.
+
+emulate -L zsh
+setopt pipefail
+
+readonly PROG_NAME=${0:t}
+readonly NOTIFICATION_GROUP='com.aroglahcim.brew-updater'
+readonly LOG_MAX_BYTES=262144
+readonly LOG_KEEP=3
+readonly EX_TEMPFAIL=75
+
+# Hard-coded, minimal PATH. Interactive dotfiles are never loaded, so nothing
+# here may rely on shell startup files.
+export PATH='/usr/bin:/bin:/usr/sbin:/sbin'
+
+umask 077
+cd /
+
+# --- paths ------------------------------------------------------------------
+
+readonly HOME_DIR=${HOME:?HOME is not set}
+readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater}
+readonly LOG_DIR=${BREW_UPDATER_LOG_DIR:-$HOME_DIR/Library/Logs/brew-updater}
+readonly LOG_FILE=$LOG_DIR/brew-updater.log
+readonly STATE_FILE=$STATE_DIR/last-success
+readonly LOCK_FILE=${BREW_UPDATER_LOCK:-$STATE_DIR/lock}
+readonly RUNNER_PATH=${BREW_UPDATER_RUNNER_BIN:-$HOME_DIR/.local/bin/brew-update-run}
+
+# --- logging ----------------------------------------------------------------
+
+mkdir -p "$STATE_DIR" "$LOG_DIR" 2>/dev/null
+
+rotate_log() {
+	local file=$1
+	[[ -f $file ]] || return 0
+	local size
+	size=$(wc -c <"$file" 2>/dev/null) || return 0
+	(( size > LOG_MAX_BYTES )) || return 0
+
+	local i
+	for (( i = LOG_KEEP - 1; i >= 1; i-- )); do
+		[[ -f "$file.$i" ]] && mv -f "$file.$i" "$file.$(( i + 1 ))" 2>/dev/null
+	done
+	cp -p "$file" "$file.1" 2>/dev/null || true
+	# Truncate in place: launchd keeps this file open, so the inode must survive.
+	: >"$file"
+}
+
+log() {
+	local line
+	line="$(/bin/date '+%Y-%m-%d %H:%M:%S') [$PROG_NAME] $*"
+	print -r -- "$line" >>"$LOG_FILE" 2>/dev/null || true
+}
+
+die() {
+	local code=$1
+	shift
+	log "error: $*"
+	print -r -- "$PROG_NAME: error: $*" >&2
+	exit "$code"
+}
+
+# --- binary resolution ------------------------------------------------------
+
+resolve_brew() {
+	if [[ -n ${BREW_UPDATER_BREW_BIN:-} ]]; then
+		print -r -- "$BREW_UPDATER_BREW_BIN"
+		return 0
+	fi
+	if [[ -x /opt/homebrew/bin/brew ]]; then
+		print -r -- /opt/homebrew/bin/brew
+		return 0
+	fi
+	if [[ -x /usr/local/bin/brew ]]; then
+		print -r -- /usr/local/bin/brew
+		return 0
+	fi
+	whence -p brew 2>/dev/null
+}
+
+resolve_jq() {
+	if [[ -n ${BREW_UPDATER_JQ_BIN:-} ]]; then
+		print -r -- "$BREW_UPDATER_JQ_BIN"
+		return 0
+	fi
+	if [[ -x /usr/bin/jq ]]; then
+		print -r -- /usr/bin/jq
+		return 0
+	fi
+	whence -p jq 2>/dev/null
+}
+
+resolve_notifier() {
+	if [[ -n ${BREW_UPDATER_NOTIFIER_BIN:-} ]]; then
+		print -r -- "$BREW_UPDATER_NOTIFIER_BIN"
+		return 0
+	fi
+	local candidate
+	for candidate in /opt/homebrew/bin/terminal-notifier /usr/local/bin/terminal-notifier; do
+		if [[ -x $candidate ]]; then
+			print -r -- "$candidate"
+			return 0
+		fi
+	done
+	whence -p terminal-notifier 2>/dev/null
+}
+
+# Quote a value as one POSIX shell word, safe for spaces and special characters.
+sh_quote() {
+	local value=$1 out="'" char
+	local -i i
+	for (( i = 1; i <= ${#value}; i++ )); do
+		char=${value[i]}
+		if [[ $char == "'" ]]; then
+			out+="'\\''"
+		else
+			out+=$char
+		fi
+	done
+	print -r -- "$out'"
+}
+
+# --- state ------------------------------------------------------------------
+
+already_checked_today() {
+	[[ -f $STATE_FILE ]] || return 1
+	local stored
+	stored=$(<"$STATE_FILE")
+	[[ $stored == "$(/bin/date '+%F')" ]]
+}
+
+record_success() {
+	local tmp="$STATE_FILE.tmp.$$"
+	if print -r -- "$(/bin/date '+%F')" >"$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null; then
+		log 'recorded successful check date'
+		return 0
+	fi
+	rm -f "$tmp" 2>/dev/null
+	log 'warning: could not record successful check date'
+	return 1
+}
+
+# --- lock -------------------------------------------------------------------
+#
+# A directory is used as the lock because mkdir(2) is atomic on every local
+# filesystem and does not depend on the deprecated shlock(1). The PID inside is
+# used only to decide whether an existing lock belongs to a live process.
+
+typeset -i LOCK_HELD=0
+
+acquire_lock() {
+	local pid_file=$LOCK_FILE/pid existing_pid
+	local -i attempt
+
+	for attempt in 1 2; do
+		if mkdir "$LOCK_FILE" 2>/dev/null; then
+			print -r -- $$ >"$pid_file" 2>/dev/null
+			LOCK_HELD=1
+			return 0
+		fi
+
+		[[ -d $LOCK_FILE ]] || return 1
+		existing_pid=''
+		[[ -f $pid_file ]] && existing_pid=$(<"$pid_file")
+
+		# No readable PID, or a PID that no longer exists: the lock is stale.
+		if [[ -z $existing_pid || $existing_pid != <-> ]]; then
+			log "removing lock without a usable PID"
+			rm -rf "$LOCK_FILE" 2>/dev/null
+			continue
+		fi
+		if ! /bin/kill -0 "$existing_pid" 2>/dev/null; then
+			log "removing stale lock held by dead process $existing_pid"
+			rm -rf "$LOCK_FILE" 2>/dev/null
+			continue
+		fi
+
+		return 1
+	done
+
+	return 1
+}
+
+release_lock() {
+	(( LOCK_HELD )) || return 0
+	LOCK_HELD=0
+	rm -rf "$LOCK_FILE" 2>/dev/null
+	return 0
+}
+
+cleanup() {
+	release_lock
+}
+trap 'cleanup' EXIT INT TERM HUP
+
+# --- notification -----------------------------------------------------------
+
+remove_notification() {
+	local notifier=$1
+	[[ -n $notifier ]] || return 0
+	"$notifier" -remove "$NOTIFICATION_GROUP" >/dev/null 2>&1
+}
+
+# The click target is a fixed absolute path, never a value derived from package
+# names or message text. The `exec ` prefix keeps the value's first character a
+# letter, which avoids terminal-notifier's NSUserDefaults property-list parsing
+# misreading a leading quote.
+send_notification() {
+	local notifier=$1 count=$2
+	"$notifier" \
+		-title 'Homebrew' \
+		-message "Dostępne aktualizacje: ${count}. Kliknij, aby uruchomić brew upgrade." \
+		-subtitle 'Kliknięcie uruchomi brew upgrade w Terminalu' \
+		-group "$NOTIFICATION_GROUP" \
+		-execute "exec $(sh_quote "$RUNNER_PATH")"
+}
+
+# --- main -------------------------------------------------------------------
+
+typeset -i FORCE=0
+for arg in "$@"; do
+	case $arg in
+	--force|-f) FORCE=1 ;;
+	--help|-h)
+		print -r -- "usage: $PROG_NAME [--force]"
+		print -r -- ''
+		print -r -- '  --force  ignore the once-per-day guard and check again'
+		exit 0
+		;;
+	*)
+		print -r -- "$PROG_NAME: unknown argument: $arg" >&2
+		exit 2
+		;;
+	esac
+done
+
+rotate_log "$LOG_FILE"
+log "starting check (force=$FORCE)"
+
+if (( ! FORCE )) && already_checked_today; then
+	log 'already checked today, nothing to do'
+	print -r -- "$PROG_NAME: already checked today"
+	exit 0
+fi
+
+if ! acquire_lock; then
+	log 'another instance holds the lock, skipping'
+	print -r -- "$PROG_NAME: another instance is running"
+	exit $EX_TEMPFAIL
+fi
+
+brew_bin=$(resolve_brew) || die 1 'brew not found'
+jq_bin=$(resolve_jq) || die 1 'jq not found'
+log "using brew: $brew_bin"
+log "using jq: $jq_bin"
+
+# Outdated detection matches what a plain `brew upgrade` acts on: formulae and
+# casks, no greedy cask handling, pinned items excluded.
+export HOMEBREW_NO_AUTO_UPDATE=1
+export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_NO_ENV_HINTS=1
+unset HOMEBREW_UPGRADE_GREEDY HOMEBREW_UPGRADE_GREEDY_CASKS
+
+log 'running brew update'
+"$brew_bin" update >>"$LOG_FILE" 2>&1
+typeset -i update_rc=$?
+if (( update_rc != 0 )); then
+	log "error: brew update failed with exit $update_rc"
+	print -r -- "$PROG_NAME: brew update failed ($update_rc)" >&2
+	exit 1
+fi
+
+log 'running brew outdated --json=v2'
+outdated_json=$("$brew_bin" outdated --json=v2 2>>"$LOG_FILE")
+typeset -i outdated_rc=$?
+if (( outdated_rc != 0 )); then
+	log "error: brew outdated failed with exit $outdated_rc"
+	print -r -- "$PROG_NAME: brew outdated failed ($outdated_rc)" >&2
+	exit 1
+fi
+
+count=$(print -r -- "$outdated_json" |
+	"$jq_bin" -r '[(.formulae // [])[], (.casks // [])[]] | map(select(.pinned != true)) | length' 2>>"$LOG_FILE")
+typeset -i jq_rc=$?
+if (( jq_rc != 0 )) || [[ -z $count || $count != <-> ]]; then
+	log "error: could not parse brew outdated output (jq exit $jq_rc)"
+	print -r -- "$PROG_NAME: could not parse brew outdated output" >&2
+	exit 1
+fi
+
+log "outdated package count: $count"
+
+notifier_bin=$(resolve_notifier) || notifier_bin=''
+
+if (( count == 0 )); then
+	if [[ -n $notifier_bin ]]; then
+		if remove_notification "$notifier_bin"; then
+			log 'removed stale notification'
+		else
+			log 'warning: could not remove stale notification'
+		fi
+	else
+		log 'warning: terminal-notifier not found, skipping notification removal'
+	fi
+	record_success || true
+	print -r -- "$PROG_NAME: no outdated packages"
+	exit 0
+fi
+
+if [[ -z $notifier_bin ]]; then
+	log 'error: terminal-notifier not found, cannot notify'
+	print -r -- "$PROG_NAME: terminal-notifier not found" >&2
+	exit 1
+fi
+
+if send_notification "$notifier_bin" "$count"; then
+	log "notification delivered for $count outdated package(s)"
+else
+	typeset -i notify_rc=$?
+	log "error: notification delivery failed with exit $notify_rc"
+	print -r -- "$PROG_NAME: notification delivery failed ($notify_rc)" >&2
+	exit 1
+fi
+
+record_success || true
+print -r -- "$PROG_NAME: $count outdated package(s), notification delivered"
+exit 0
