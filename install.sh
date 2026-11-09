@@ -7,7 +7,7 @@
 # result, and loads it into the GUI session with launchctl bootstrap.
 #
 # Usage: ./install.sh [--time HH:MM] [--dry-run]
-#   --time HH:MM   daily check time, 24h clock (default 07:00)
+#   --time HH:MM   time for the calendar trigger, 24h clock (default 07:00)
 #   --dry-run      render and validate, print the plan, change nothing
 
 emulate -L zsh
@@ -35,7 +35,7 @@ usage() {
 	print -r -- ''
 	print -r -- 'Installs symlinks in ~/.local/bin, renders and loads the LaunchAgent.'
 	print -r -- ''
-	print -r -- '  --time HH:MM   daily check time on a 24h clock (default 07:00)'
+	print -r -- '  --time HH:MM   time for the calendar trigger, 24h clock (default 07:00)'
 	print -r -- '  --dry-run      validate and report without changing anything'
 }
 
@@ -113,8 +113,8 @@ done
 [[ -x $REPO_DIR/bin/brew-update-run ]] || die "runner not executable: $REPO_DIR/bin/brew-update-run"
 
 say "repository: $REPO_DIR"
-say "daily check: $(printf '%02d:%02d' $TIME_H $TIME_M)"
-say 'repeat interval: 1800s (30 min)'
+say "calendar trigger: $(printf '%02d:%02d' $TIME_H $TIME_M)"
+say 'repeat interval: 1800s (30 min), all day'
 
 rendered=$(<"$TEMPLATE")
 rendered=${rendered//@@LABEL@@/$(xml_escape "$LABEL")}

@@ -7,31 +7,35 @@ when these facts change; do not leave them only in chat.
 
 | Command | Contract |
 |---------|----------|
-| `brew-update-check [--force]` | Refresh metadata, count outdated packages, notify. `--force` ignores the once-per-day guard. |
+| `brew-update-check [--force]` | Refresh metadata, count outdated packages, notify. `--force` posts the notification even when the count is unchanged. |
 | `brew-update-run` | Open Terminal and run `brew upgrade -y`. No arguments are honoured. |
 
 Exit codes for the checker:
 
 | Code | Meaning |
 |------|---------|
-| `0` | Check completed: up to date, or notification delivered |
+| `0` | Check completed: up to date, count unchanged, or notification delivered |
 | `1` | Check failed: `brew update`, `brew outdated`, `jq` parsing, or notification delivery |
 | `75` | Another instance holds the lock; launchd retries on the next interval |
 
 Automation must treat `75` as temporary. Treating `1` as "no updates" is a bug.
 
-## Daily guard
+## Notification guard
 
-`$HOME/.local/state/brew-updater/last-success` holds a single line: the date in
-`YYYY-MM-DD` from `date +%F`.
+`$HOME/.local/state/brew-updater/notified-count` holds a single line: the
+outdated count the user was last notified about.
 
 - Written atomically: temp file in the same directory, then `mv -f`.
-- Written **only** after the whole check succeeded, which means: `brew update`
-  exit 0, `brew outdated` exit 0, parsed count valid, and — when the count is
-  greater than zero — the notification delivered with exit 0.
-- Any failure leaves the file untouched, so the 30-minute `StartInterval` retries.
-- If the stored date equals today, the checker exits `0` without running `brew`
-  and without posting a notification.
+- Written **only** after a notification was delivered with exit 0. A failed
+  notification delivery leaves the file untouched, so the 30-minute
+  `StartInterval` retries.
+- The checker always refreshes metadata and recounts. It posts a notification
+  only when the count differs from the stored value, or when the file is
+  missing. `--force` posts regardless.
+- When the count is zero the file is removed and the stale notification is
+  cleared.
+- The click path (`brew-update-run`) removes the file after clearing the
+  notification, so the next scheduled run re-posts it for the current count.
 
 ## Detection scope
 
@@ -62,7 +66,7 @@ installs will happen; dependencies may pull in more.
   from `brew` output.
 - When the count is zero, the checker calls `terminal-notifier -remove` with the
   same group so a stale notification does not linger.
-- Delivery failure is a check failure: exit `1`, no success date, retry later.
+- Delivery failure is a check failure: exit `1`, no notified count, retry later.
 
 ### Authorization requirements
 
@@ -93,6 +97,8 @@ involved.
   `Do you want to proceed?` confirmation, so the click alone starts the upgrade.
 - It ends with `exec /bin/zsh -l`, so the window remains open after the upgrade and
   the exit code stays visible.
+- It also clears the notification and removes `notified-count`, so the next
+  scheduled check re-posts the notification for whatever is still outdated.
 
 ## Locking
 
@@ -116,7 +122,7 @@ loaded with `launchctl bootstrap gui/$UID`.
 |-----|-------|-----|
 | `RunAtLoad` | `true` | check at login |
 | `StartCalendarInterval` | `Hour`/`Minute`, default 07:00 | morning check; a missed fire runs after wake |
-| `StartInterval` | `1800` | retry cadence, and catch-up after wake |
+| `StartInterval` | `1800` | refresh cadence all day, and catch-up after wake |
 | `ProcessType` | `Background` | no interactive QoS |
 
 **`brew services` cannot express this job.** In Homebrew 7.x `Service#interval`
@@ -125,7 +131,11 @@ emits `StartInterval` only for `run_type :interval`, and `#cron` emits
 exclusive, so a `brew services` job cannot carry both triggers. The plist is
 therefore always rendered by `install.sh` (or a tap's `post_install`).
 
-Screen-unlock detection is out of scope. The schedule covers login, the daily
+Every trigger runs the full check. Notifications are rate-limited by the
+`notified-count` guard, not by suppressing the check itself, so a package that
+becomes outdated mid-day is reported on the next 30-minute run.
+
+Screen-unlock detection is out of scope. The schedule covers login, the calendar
 time, and wake.
 
 ## Logs
@@ -158,5 +168,6 @@ the real state. Defaults:
 - Background upgrades, upgrades triggered on a timer, and `sudo brew`.
 - Greedy cask handling and `version :latest` casks.
 - Detecting screen unlock.
+- Suppressing checks; only notifications are rate-limited.
 - Managing packages, taps, or the `Brewfile`.
 - System-level LaunchDaemons or cron entries.
