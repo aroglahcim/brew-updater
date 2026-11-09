@@ -237,10 +237,14 @@ remove_notification() {
 # misreading a leading quote.
 send_notification() {
 	local notifier=$1 count=$2
+	local noun=updates
+	if (( count == 1 )); then
+		noun=update
+	fi
 	"$notifier" \
-		-title 'Homebrew' \
-		-message "Dostępne aktualizacje: ${count}. Kliknij, aby uruchomić brew upgrade." \
-		-subtitle 'Kliknięcie uruchomi brew upgrade w Terminalu' \
+		-title "Homebrew: ${count} ${noun} available" \
+		-message 'Click to run brew upgrade.' \
+		-subtitle 'Click opens Terminal and runs brew upgrade.' \
 		-group "$NOTIFICATION_GROUP" \
 		-execute "exec $(sh_quote "$RUNNER_PATH")"
 }

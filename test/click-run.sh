@@ -21,8 +21,8 @@ print -r -- "$(/bin/date '+%Y-%m-%d %H:%M:%S') [click-run] test click activated"
 
 {
 	print -r -- '#!/bin/zsh'
-	print -r -- "print -r -- 'brew-updater test click: akcja -execute dociera do Terminala.'"
-	print -r -- "print -r -- 'Nic nie zostalo zainstalowane ani zaktualizowane.'"
+	print -r -- "print -r -- 'brew-updater test click: the -execute action reaches Terminal.'"
+	print -r -- "print -r -- 'Nothing was installed or upgraded.'"
 	print -r -- '/bin/date'
 	print -r -- 'exec /bin/zsh -l'
 } >"$TASK" 2>/dev/null || exit 1

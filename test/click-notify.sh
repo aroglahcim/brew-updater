@@ -30,8 +30,8 @@ fi
 
 if ! "$NOTIFIER" \
 	-title 'brew-updater test' \
-	-message 'Kliknij, aby sprawdzić akcję powiadomienia. Uruchomi się tylko test, nigdy brew upgrade.' \
-	-subtitle 'Test kliknięcia, nie aktualizacja' \
+	-message 'Click to test the notification action. Only the test runs, never brew upgrade.' \
+	-subtitle 'Test click, not an upgrade' \
 	-group 'com.aroglahcim.brew-updater.selftest' \
 	-execute "exec '$TEST_RUNNER'"; then
 	rc=$?

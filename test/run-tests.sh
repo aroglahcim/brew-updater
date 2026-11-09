@@ -169,10 +169,10 @@ setup_case 'some-outdated'
 json_outdated 2 1 0 >"$FAKE_CONTROL/outdated_json"
 rc=$(run_checker)
 expect_eq 'exit code is 0' "$rc" 0
-if grep -qx 'Dostępne aktualizacje: 3. Kliknij, aby uruchomić brew upgrade.' "$FAKE_CONTROL/notifier_calls"; then
-	pass 'message reports 3 updates'
+if grep -qx 'Homebrew: 3 updates available' "$FAKE_CONTROL/notifier_calls"; then
+	pass 'title reports 3 updates'
 else
-	fail 'message reports 3 updates' "$(<"$FAKE_CONTROL/notifier_calls")"
+	fail 'title reports 3 updates' "$(<"$FAKE_CONTROL/notifier_calls")"
 fi
 if grep -qF "$BREW_UPDATER_RUNNER_BIN" "$FAKE_CONTROL/notifier_calls"; then
 	pass 'click target is the runner path'
@@ -187,7 +187,7 @@ setup_case 'pinned-only'
 json_outdated 1 1 1 >"$FAKE_CONTROL/outdated_json"
 rc=$(run_checker)
 expect_eq 'exit code is 0' "$rc" 0
-if grep -q 'Dostępne aktualizacje' "$FAKE_CONTROL/notifier_calls"; then
+if grep -q 'updates available' "$FAKE_CONTROL/notifier_calls"; then
 	fail 'no notification for pinned-only set' "$(<"$FAKE_CONTROL/notifier_calls")"
 else
 	pass 'no notification for pinned-only set'
@@ -255,7 +255,7 @@ run_checker >/dev/null
 rc=$(run_checker --force)
 expect_eq 'exit code is 0' "$rc" 0
 expect_eq 'brew update ran twice' "$(grep -c '^update' "$FAKE_CONTROL/calls")" 2
-if grep -qx 'Dostępne aktualizacje: 1. Kliknij, aby uruchomić brew upgrade.' "$FAKE_CONTROL/notifier_calls"; then
+if grep -qx 'Homebrew: 1 update available' "$FAKE_CONTROL/notifier_calls"; then
 	pass 'notification re-posted'
 else
 	fail 'notification re-posted' "$(<"$FAKE_CONTROL/notifier_calls")"
@@ -270,7 +270,7 @@ json_outdated 2 0 0 >"$FAKE_CONTROL/outdated_json"
 : >"$FAKE_CONTROL/notifier_calls"
 rc=$(run_checker)
 expect_eq 'exit code is 0' "$rc" 0
-if grep -qx 'Dostępne aktualizacje: 2. Kliknij, aby uruchomić brew upgrade.' "$FAKE_CONTROL/notifier_calls"; then
+if grep -qx 'Homebrew: 2 updates available' "$FAKE_CONTROL/notifier_calls"; then
 	pass 'notification for the new count'
 else
 	fail 'notification for the new count' "$(<"$FAKE_CONTROL/notifier_calls")"
