@@ -31,6 +31,7 @@ readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater
 readonly LOG_DIR=${BREW_UPDATER_LOG_DIR:-$HOME_DIR/Library/Logs/brew-updater}
 readonly LOG_FILE=$LOG_DIR/brew-updater.log
 readonly TASK_SCRIPT=$STATE_DIR/upgrade.command
+readonly NOTIFIED_FILE=$STATE_DIR/notified-count
 
 mkdir -p "$STATE_DIR" "$LOG_DIR" 2>/dev/null
 
@@ -99,6 +100,10 @@ if [[ -z $notifier_bin ]]; then
 	done
 fi
 [[ -n $notifier_bin ]] && "$notifier_bin" -remove "$NOTIFICATION_GROUP" >/dev/null 2>&1
+
+# Drop the remembered count: with the notification gone, the next scheduled run
+# must be free to post it again for the current set of outdated packages.
+rm -f "$NOTIFIED_FILE" 2>/dev/null && log 'cleared notified count'
 
 # The task script is fully static apart from the quoted brew path. No package
 # name, no notification text, and no brew output ever reaches it.
