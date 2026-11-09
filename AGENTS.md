@@ -100,7 +100,7 @@ There is no build step and no package manager.
 | `test/run-tests.sh` | Mock-driven suite; never touches real Homebrew |
 | `test/click-notify.sh` | Sends a notification whose click runs `test/click-run.sh` |
 | `docs/PUBLISHING.md` | Plan for distributing through a Homebrew tap |
-| `$HOME/.local/state/brew-updater/last-success` | Date of the last successful check |
+| `$HOME/.local/state/brew-updater/notified-count` | Outdated count the user was last notified about |
 | `$HOME/.local/state/brew-updater/lock.d` | Lock directory holding the owner PID |
 | `$HOME/.local/state/brew-updater/upgrade.command` | Generated Terminal script for the upgrade |
 | `$HOME/Library/Logs/brew-updater/brew-updater.log` | Rotating diagnostic log |

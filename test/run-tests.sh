@@ -140,10 +140,6 @@ run_checker() {
 	print -r -- $?
 }
 
-today() {
-	/bin/date '+%F'
-}
-
 # --- tests ------------------------------------------------------------------
 
 TMPROOT=$(mktemp -d "${TMPDIR:-/tmp}/brew-updater tests.XXXXXX")
@@ -159,7 +155,11 @@ print -r -- 'case: no outdated packages'
 setup_case 'no-outdated'
 rc=$(run_checker)
 expect_eq 'exit code is 0' "$rc" 0
-expect_eq 'success date recorded' "$(<"$BREW_UPDATER_STATE_DIR/last-success")" "$(today)"
+if [[ -f $BREW_UPDATER_STATE_DIR/notified-count ]]; then
+	fail 'no notified count recorded'
+else
+	pass 'no notified count recorded'
+fi
 expect_eq 'no notification delivered' "$(<"$FAKE_CONTROL/notifier_calls")" $'---\n-remove\ncom.aroglahcim.brew-updater'
 expect_eq 'brew update ran once' "$(grep -c '^update' "$FAKE_CONTROL/calls")" 1
 
@@ -179,7 +179,7 @@ if grep -qF "$BREW_UPDATER_RUNNER_BIN" "$FAKE_CONTROL/notifier_calls"; then
 else
 	fail 'click target is the runner path' "$(<"$FAKE_CONTROL/notifier_calls")"
 fi
-expect_eq 'success date recorded' "$(<"$BREW_UPDATER_STATE_DIR/last-success")" "$(today)"
+expect_eq 'notified count recorded' "$(<"$BREW_UPDATER_STATE_DIR/notified-count")" 3
 
 # 3. Pinned packages excluded.
 print -r -- 'case: pinned packages are excluded'
@@ -199,10 +199,10 @@ setup_case 'update-fails'
 print -r -- 1 >"$FAKE_CONTROL/update_rc"
 rc=$(run_checker)
 expect_eq 'exit code is 1' "$rc" 1
-if [[ -f $BREW_UPDATER_STATE_DIR/last-success ]]; then
-	fail 'no success date recorded'
+if [[ -f $BREW_UPDATER_STATE_DIR/notified-count ]]; then
+	fail 'no notified count recorded'
 else
-	pass 'no success date recorded'
+	pass 'no notified count recorded'
 fi
 
 # 5. brew outdated fails.
@@ -211,10 +211,10 @@ setup_case 'outdated-fails'
 print -r -- 1 >"$FAKE_CONTROL/outdated_rc"
 rc=$(run_checker)
 expect_eq 'exit code is 1' "$rc" 1
-if [[ -f $BREW_UPDATER_STATE_DIR/last-success ]]; then
-	fail 'no success date recorded'
+if [[ -f $BREW_UPDATER_STATE_DIR/notified-count ]]; then
+	fail 'no notified count recorded'
 else
-	pass 'no success date recorded'
+	pass 'no notified count recorded'
 fi
 
 # 6. Notification delivery fails.
@@ -224,35 +224,60 @@ json_outdated 1 0 0 >"$FAKE_CONTROL/outdated_json"
 print -r -- 1 >"$FAKE_CONTROL/notify_rc"
 rc=$(run_checker)
 expect_eq 'exit code is 1' "$rc" 1
-if [[ -f $BREW_UPDATER_STATE_DIR/last-success ]]; then
-	fail 'no success date recorded'
+if [[ -f $BREW_UPDATER_STATE_DIR/notified-count ]]; then
+	fail 'no notified count recorded'
 else
-	pass 'no success date recorded'
+	pass 'no notified count recorded'
 fi
 
-# 7. Second run on the same day is a no-op.
-print -r -- 'case: second run on the same day'
+# 7. An unchanged count is not re-notified.
+print -r -- 'case: unchanged count is suppressed'
 setup_case 'second-run'
 json_outdated 1 0 0 >"$FAKE_CONTROL/outdated_json"
 run_checker >/dev/null
+: >"$FAKE_CONTROL/notifier_calls"
 rc=$(run_checker)
 expect_eq 'exit code is 0' "$rc" 0
-expect_eq 'brew was not called again' "$(grep -c . "$FAKE_CONTROL/calls")" 2
-if grep -q 'already checked today' "$CASE_DIR/stdout"; then
-	pass 'reports already checked today'
+expect_eq 'brew ran again' "$(grep -c '^update' "$FAKE_CONTROL/calls")" 2
+expect_eq 'no second notification' "$(<"$FAKE_CONTROL/notifier_calls")" ''
+if grep -q 'already notified' "$CASE_DIR/stdout"; then
+	pass 'reports already notified'
 else
-	fail 'reports already checked today' "$(<"$CASE_DIR/stdout")"
+	fail 'reports already notified' "$(<"$CASE_DIR/stdout")"
 fi
 
-# 8. --force bypasses the daily guard.
-print -r -- 'case: --force bypasses the daily guard'
+# 8. --force re-notifies an unchanged count.
+print -r -- 'case: --force re-notifies'
 setup_case 'force'
+json_outdated 1 0 0 >"$FAKE_CONTROL/outdated_json"
 run_checker >/dev/null
+: >"$FAKE_CONTROL/notifier_calls"
 rc=$(run_checker --force)
 expect_eq 'exit code is 0' "$rc" 0
 expect_eq 'brew update ran twice' "$(grep -c '^update' "$FAKE_CONTROL/calls")" 2
+if grep -qx 'Dostępne aktualizacje: 1. Kliknij, aby uruchomić brew upgrade.' "$FAKE_CONTROL/notifier_calls"; then
+	pass 'notification re-posted'
+else
+	fail 'notification re-posted' "$(<"$FAKE_CONTROL/notifier_calls")"
+fi
 
-# 9. Concurrent run is refused.
+# 9. A changed count notifies again.
+print -r -- 'case: changed count notifies again'
+setup_case 'count-changed'
+json_outdated 1 0 0 >"$FAKE_CONTROL/outdated_json"
+run_checker >/dev/null
+json_outdated 2 0 0 >"$FAKE_CONTROL/outdated_json"
+: >"$FAKE_CONTROL/notifier_calls"
+rc=$(run_checker)
+expect_eq 'exit code is 0' "$rc" 0
+if grep -qx 'Dostępne aktualizacje: 2. Kliknij, aby uruchomić brew upgrade.' "$FAKE_CONTROL/notifier_calls"; then
+	pass 'notification for the new count'
+else
+	fail 'notification for the new count' "$(<"$FAKE_CONTROL/notifier_calls")"
+fi
+expect_eq 'notified count updated' "$(<"$BREW_UPDATER_STATE_DIR/notified-count")" 2
+
+# 10. Concurrent run is refused.
 print -r -- 'case: concurrent run'
 setup_case 'concurrent'
 json_outdated 1 0 0 >"$FAKE_CONTROL/outdated_json"
@@ -281,7 +306,7 @@ else
 	pass 'lock released after both runs'
 fi
 
-# 10. A stale lock from a dead process is reclaimed.
+# 11. A stale lock from a dead process is reclaimed.
 print -r -- 'case: stale lock is reclaimed'
 setup_case 'stale-lock'
 mkdir -p "$BREW_UPDATER_LOCK"

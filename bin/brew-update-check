@@ -4,10 +4,12 @@
 #
 # Never installs or upgrades anything. When outdated packages exist it posts a
 # single clickable notification whose click target is brew-update-run, which
-# opens an interactive Terminal and starts `brew upgrade`.
+# opens an interactive Terminal and starts `brew upgrade`. Every scheduled run
+# refreshes metadata and recounts; the notification is re-posted only when the
+# count changes, or after a click cleared the remembered count.
 #
 # Exit codes:
-#   0   check completed (up-to-date, or notification delivered)
+#   0   check completed (up-to-date, count unchanged, or notification delivered)
 #   1   check failed (brew update, brew outdated, or notification delivery)
 #   75  another instance holds the lock (temporary failure, retried later)
 #
@@ -35,7 +37,7 @@ readonly HOME_DIR=${HOME:?HOME is not set}
 readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater}
 readonly LOG_DIR=${BREW_UPDATER_LOG_DIR:-$HOME_DIR/Library/Logs/brew-updater}
 readonly LOG_FILE=$LOG_DIR/brew-updater.log
-readonly STATE_FILE=$STATE_DIR/last-success
+readonly STATE_FILE=$STATE_DIR/notified-count
 readonly LOCK_FILE=${BREW_UPDATER_LOCK:-$STATE_DIR/lock}
 readonly RUNNER_PATH=${BREW_UPDATER_RUNNER_BIN:-$HOME_DIR/.local/bin/brew-update-run}
 
@@ -134,22 +136,37 @@ sh_quote() {
 }
 
 # --- state ------------------------------------------------------------------
+#
+# STATE_FILE holds the outdated count that the user was last notified about.
+# A run notifies when the count differs from that value (or the file is absent).
+# The click path removes the file, so the next run re-posts the notification for
+# the current count.
 
-already_checked_today() {
+notified_count() {
 	[[ -f $STATE_FILE ]] || return 1
 	local stored
 	stored=$(<"$STATE_FILE")
-	[[ $stored == "$(/bin/date '+%F')" ]]
+	[[ $stored == <-> ]] || return 1
+	print -r -- "$stored"
 }
 
-record_success() {
-	local tmp="$STATE_FILE.tmp.$$"
-	if print -r -- "$(/bin/date '+%F')" >"$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null; then
-		log 'recorded successful check date'
+record_notified_count() {
+	local count=$1 tmp="$STATE_FILE.tmp.$$"
+	if print -r -- "$count" >"$tmp" 2>/dev/null && mv -f "$tmp" "$STATE_FILE" 2>/dev/null; then
+		log "recorded notified count: $count"
 		return 0
 	fi
 	rm -f "$tmp" 2>/dev/null
-	log 'warning: could not record successful check date'
+	log 'warning: could not record notified count'
+	return 1
+}
+
+clear_notified_count() {
+	if rm -f "$STATE_FILE" 2>/dev/null; then
+		log 'cleared notified count'
+		return 0
+	fi
+	log 'warning: could not clear notified count'
 	return 1
 }
 
@@ -237,7 +254,7 @@ for arg in "$@"; do
 	--help|-h)
 		print -r -- "usage: $PROG_NAME [--force]"
 		print -r -- ''
-		print -r -- '  --force  ignore the once-per-day guard and check again'
+		print -r -- '  --force  post the notification even when the count is unchanged'
 		exit 0
 		;;
 	*)
@@ -249,12 +266,6 @@ done
 
 rotate_log "$LOG_FILE"
 log "starting check (force=$FORCE)"
-
-if (( ! FORCE )) && already_checked_today; then
-	log 'already checked today, nothing to do'
-	print -r -- "$PROG_NAME: already checked today"
-	exit 0
-fi
 
 if ! acquire_lock; then
 	log 'another instance holds the lock, skipping'
@@ -315,7 +326,7 @@ if (( count == 0 )); then
 	else
 		log 'warning: terminal-notifier not found, skipping notification removal'
 	fi
-	record_success || true
+	clear_notified_count || true
 	print -r -- "$PROG_NAME: no outdated packages"
 	exit 0
 fi
@@ -324,6 +335,16 @@ if [[ -z $notifier_bin ]]; then
 	log 'error: terminal-notifier not found, cannot notify'
 	print -r -- "$PROG_NAME: terminal-notifier not found" >&2
 	exit 1
+fi
+
+# Notify when the count differs from the last delivered one. --force posts
+# anyway. A missing state file (fresh install, or a click that cleared it) also
+# counts as a change, so one click never silences the next scheduled check.
+previous_count=$(notified_count) || previous_count=''
+if (( ! FORCE )) && [[ $previous_count == "$count" ]]; then
+	log "count unchanged since last notification ($count), nothing to do"
+	print -r -- "$PROG_NAME: $count outdated package(s), already notified"
+	exit 0
 fi
 
 if send_notification "$notifier_bin" "$count"; then
@@ -335,6 +356,6 @@ else
 	exit 1
 fi
 
-record_success || true
+record_notified_count "$count" || true
 print -r -- "$PROG_NAME: $count outdated package(s), notification delivered"
 exit 0
