@@ -48,7 +48,8 @@ There is no build step and no package manager.
 - State writes are atomic: write a temp file in the same directory, then `mv -f`.
 - Prefer machine-readable `brew` output. Never parse decorated human-facing text.
 - Exit codes are meaningful: `0` success, `1` failure, `75` lock contention.
-- Localized user-facing strings are Polish; code, comments, and docs are English.
+- All strings, including user-facing ones, are English: code, comments, docs,
+ notifications, and generated Terminal output.
 
 ## Safety — non-negotiable
 

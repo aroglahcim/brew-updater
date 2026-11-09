@@ -27,8 +27,9 @@ This links the scripts into `~/.local/bin`, renders the LaunchAgent into
   `brew update` and `brew outdated --json=v2`.
 - With no outdated packages, nothing is shown and any previous notification is
   removed.
-- With outdated packages, one notification appears:
-  `Dostępne aktualizacje: N. Kliknij, aby uruchomić brew upgrade.`
+- With outdated packages, one notification appears, titled
+  `Homebrew: N updates available` (singular `update` at N=1) with the message
+  `Click to run brew upgrade.`
 - Clicking it opens Terminal and runs `brew upgrade -y`, so no `Do you want to
   proceed?` prompt appears. The window stays open so the result can be read. A
   cask that needs a password prompts for it there.

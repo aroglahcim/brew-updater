@@ -57,8 +57,10 @@ installs will happen; dependencies may pull in more.
 
 - `-group com.aroglahcim.brew-updater` — a new notification replaces the previous
   one instead of stacking.
-- Title `Homebrew`, message `Dostępne aktualizacje: N. Kliknij, aby uruchomić brew upgrade.`,
-  subtitle `Kliknięcie uruchomi brew upgrade w Terminalu`.
+- Title `Homebrew: N updates available` (`update` when N is 1), message
+  `Click to run brew upgrade.`, subtitle
+  `Click opens Terminal and runs brew upgrade.`. The count lives in the title so
+  the number is visible without expanding the banner.
 - `-execute` holds `exec '<absolute runner path>'`. The leading `exec ` keeps the
   value's first character a letter, avoiding terminal-notifier's NSUserDefaults
   property-list parsing of a leading quote.
