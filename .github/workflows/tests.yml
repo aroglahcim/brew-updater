@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: zsh syntax and mock-driven suite
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: zsh syntax check
+        run: |
+          set -e
+          for script in bin/brew-update-check bin/brew-update-run install.sh uninstall.sh \
+                        test/run-tests.sh test/click-notify.sh test/click-run.sh; do
+            zsh -n "$script"
+            echo "ok: $script"
+          done
+
+      - name: Mock-driven test suite
+        run: ./test/run-tests.sh
