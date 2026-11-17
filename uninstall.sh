@@ -22,6 +22,7 @@ readonly BIN_DIR=$HOME_DIR/.local/bin
 readonly AGENT_PLIST=$HOME_DIR/Library/LaunchAgents/$LABEL.plist
 readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater}
 readonly LOG_DIR=${BREW_UPDATER_LOG_DIR:-$HOME_DIR/Library/Logs/brew-updater}
+readonly NOTIFIER_APP=$HOME_DIR/Applications/terminal-notifier.app
 
 typeset -i DRY_RUN=0 PURGE=0
 
@@ -43,6 +44,18 @@ say() {
 	print -r -- "==> $*"
 }
 
+# install.sh links the terminal-notifier bundle into ~/Applications so macOS can
+# offer the notification permission prompt. Remove that link on uninstall, but
+# only when it is a symlink into a terminal-notifier keg: anything else at that
+# path is the user's own and must survive. The keg itself belongs to Homebrew and
+# is never touched here.
+is_our_notifier_link() {
+	[[ -L $NOTIFIER_APP ]] || return 1
+	local target
+	target=$(/usr/bin/readlink "$NOTIFIER_APP") || return 1
+	[[ $target == *terminal-notifier* ]]
+}
+
 while (( $# )); do
 	case $1 in
 	--purge) PURGE=1; shift ;;
@@ -57,6 +70,9 @@ if (( DRY_RUN )); then
 	[[ -f $AGENT_PLIST ]] && say "would remove: $AGENT_PLIST"
 	say "would remove: $BIN_DIR/brew-update-check"
 	say "would remove: $BIN_DIR/brew-update-run"
+	if is_our_notifier_link; then
+		say "would remove: $NOTIFIER_APP"
+	fi
 	if (( PURGE )); then
 		say "would remove: $STATE_DIR"
 		say "would remove: $LOG_DIR"
@@ -76,6 +92,11 @@ say 'removing symlinks'
 for link in "$BIN_DIR/brew-update-check" "$BIN_DIR/brew-update-run"; do
 	[[ -L $link ]] && rm -f "$link"
 done
+
+if is_our_notifier_link; then
+	say "removing $NOTIFIER_APP"
+	rm -f "$NOTIFIER_APP"
+fi
 
 if (( PURGE )); then
 	say "removing $STATE_DIR"
