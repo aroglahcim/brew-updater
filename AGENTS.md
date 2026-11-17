@@ -102,7 +102,7 @@ There is no build step and no package manager.
 | `uninstall.sh` | `launchctl bootout`, symlink, plist and `~/Applications` link removal, optional purge |
 | `test/run-tests.sh` | Mock-driven suite; never touches real Homebrew |
 | `test/click-notify.sh` | Sends a notification whose click runs `test/click-run.sh` |
-| `docs/PUBLISHING.md` | Plan for distributing through a Homebrew tap |
+| [issue #5](https://github.com/aroglahcim/brew-updater/issues/5) | Plan for distributing through a Homebrew tap |
 | `$HOME/.local/state/brew-updater/notified-count` | Outdated count the user was last notified about |
 | `$HOME/.local/state/brew-updater/lock.d` | Lock directory holding the owner PID |
 | `$HOME/.local/state/brew-updater/upgrade.command` | Generated Terminal script for the upgrade |

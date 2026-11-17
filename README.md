@@ -6,7 +6,8 @@ opens an interactive Terminal running `brew upgrade`.
 
 Agents: read [`AGENTS.md`](AGENTS.md) for conventions and safety rules, and
 [`CONTRACT.md`](CONTRACT.md) for the stable behaviour contract. The plan for
-publishing through a Homebrew tap is in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
+publishing through a Homebrew tap is tracked in
+[issue #5](https://github.com/aroglahcim/brew-updater/issues/5).
 
 ## Requirements
 
