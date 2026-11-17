@@ -21,7 +21,7 @@ here manages system-level daemons.
 |------|------|
 | `zsh` | Script interpreter; all entry points are zsh with `emulate -L zsh` |
 | `brew` | Homebrew CLI, resolved at runtime, never assumed to be in `/opt/homebrew` |
-| `jq` | Parses `brew outdated --json=v2`; system copy at `/usr/bin/jq` |
+| `jq` | Parses `brew outdated --json=v2`; resolved from the Homebrew prefixes, then `/usr/bin/jq`, then `PATH` |
 | `terminal-notifier` | Posts the notification and stores the click action |
 | `open -a Terminal` | Opens the generated `.command` script through LaunchServices |
 | `plutil` | Validates the rendered LaunchAgent plist |
@@ -44,6 +44,8 @@ There is no build step and no package manager.
 - Every script starts with `emulate -L zsh` and sets a hard-coded minimal `PATH`.
   Never rely on interactive dotfiles; launchd does not load them.
 - Absolute paths for system tools (`/bin/date`, `/usr/bin/jq`, `/bin/launchctl`).
+  Optional tools are additionally looked up in the Homebrew prefixes, because the
+  hard-coded `PATH` deliberately excludes them.
 - Every filesystem path is quoted. Directories may contain spaces.
 - State writes are atomic: write a temp file in the same directory, then `mv -f`.
 - Prefer machine-readable `brew` output. Never parse decorated human-facing text.
@@ -97,10 +99,10 @@ There is no build step and no package manager.
 | `bin/brew-update-run` | Click target; opens Terminal and runs `brew upgrade -y` |
 | `launchd/com.aroglahcim.brew-updater.plist.tmpl` | LaunchAgent template with `@@TOKEN@@` placeholders |
 | `install.sh` | Symlinks, plist rendering, `launchctl bootstrap` |
-| `uninstall.sh` | `launchctl bootout`, symlink and plist removal, optional purge |
+| `uninstall.sh` | `launchctl bootout`, symlink, plist and `~/Applications` link removal, optional purge |
 | `test/run-tests.sh` | Mock-driven suite; never touches real Homebrew |
 | `test/click-notify.sh` | Sends a notification whose click runs `test/click-run.sh` |
-| `docs/PUBLISHING.md` | Plan for distributing through a Homebrew tap |
+| [issue #5](https://github.com/aroglahcim/brew-updater/issues/5) | Plan for distributing through a Homebrew tap |
 | `$HOME/.local/state/brew-updater/notified-count` | Outdated count the user was last notified about |
 | `$HOME/.local/state/brew-updater/lock.d` | Lock directory holding the owner PID |
 | `$HOME/.local/state/brew-updater/upgrade.command` | Generated Terminal script for the upgrade |

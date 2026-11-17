@@ -97,6 +97,8 @@ involved.
   a package name or notification text.
 - The upgrade command is `brew upgrade -y`: `-y` (`--no-ask`) skips the
   `Do you want to proceed?` confirmation, so the click alone starts the upgrade.
+  The flag requires Homebrew 6.0.0 or newer; on older releases it is rejected as
+  an invalid option.
 - It ends with `exec /bin/zsh -l`, so the window remains open after the upgrade and
   the exit code stays visible.
 - It also clears the notification and removes `notified-count`, so the next
@@ -160,7 +162,7 @@ the real state. Defaults:
 | `BREW_UPDATER_STATE_DIR` | `$HOME/.local/state/brew-updater` |
 | `BREW_UPDATER_LOG_DIR` | `$HOME/Library/Logs/brew-updater` |
 | `BREW_UPDATER_BREW_BIN` | resolved: `/opt/homebrew/bin/brew`, `/usr/local/bin/brew`, then `PATH` |
-| `BREW_UPDATER_JQ_BIN` | `/usr/bin/jq`, then `PATH` |
+| `BREW_UPDATER_JQ_BIN` | `/opt/homebrew/bin/jq`, `/usr/local/bin/jq`, `/usr/bin/jq`, then `PATH` |
 | `BREW_UPDATER_NOTIFIER_BIN` | `/opt/homebrew/bin/terminal-notifier`, `/usr/local/bin/terminal-notifier`, then `PATH` |
 | `BREW_UPDATER_RUNNER_BIN` | `$HOME/.local/bin/brew-update-run` |
 | `BREW_UPDATER_LOCK` | `$STATE_DIR/lock.d` |

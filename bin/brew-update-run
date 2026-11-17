@@ -91,7 +91,7 @@ log "opening Terminal to run: $brew_bin upgrade -y"
 # Clear this automation's notification so it does not linger after the click.
 notifier_bin=${BREW_UPDATER_NOTIFIER_BIN:-}
 if [[ -z $notifier_bin ]]; then
-	local candidate
+	typeset candidate
 	for candidate in /opt/homebrew/bin/terminal-notifier /usr/local/bin/terminal-notifier; do
 		if [[ -x $candidate ]]; then
 			notifier_bin=$candidate

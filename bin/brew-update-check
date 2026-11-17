@@ -38,7 +38,7 @@ readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater
 readonly LOG_DIR=${BREW_UPDATER_LOG_DIR:-$HOME_DIR/Library/Logs/brew-updater}
 readonly LOG_FILE=$LOG_DIR/brew-updater.log
 readonly STATE_FILE=$STATE_DIR/notified-count
-readonly LOCK_FILE=${BREW_UPDATER_LOCK:-$STATE_DIR/lock}
+readonly LOCK_FILE=${BREW_UPDATER_LOCK:-$STATE_DIR/lock.d}
 readonly RUNNER_PATH=${BREW_UPDATER_RUNNER_BIN:-$HOME_DIR/.local/bin/brew-update-run}
 
 # --- logging ----------------------------------------------------------------
@@ -98,10 +98,13 @@ resolve_jq() {
 		print -r -- "$BREW_UPDATER_JQ_BIN"
 		return 0
 	fi
-	if [[ -x /usr/bin/jq ]]; then
-		print -r -- /usr/bin/jq
-		return 0
-	fi
+	local candidate
+	for candidate in /opt/homebrew/bin/jq /usr/local/bin/jq /usr/bin/jq; do
+		if [[ -x $candidate ]]; then
+			print -r -- "$candidate"
+			return 0
+		fi
+	done
 	whence -p jq 2>/dev/null
 }
 
