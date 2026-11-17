@@ -38,7 +38,7 @@ readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater
 readonly LOG_DIR=${BREW_UPDATER_LOG_DIR:-$HOME_DIR/Library/Logs/brew-updater}
 readonly LOG_FILE=$LOG_DIR/brew-updater.log
 readonly STATE_FILE=$STATE_DIR/notified-count
-readonly LOCK_FILE=${BREW_UPDATER_LOCK:-$STATE_DIR/lock}
+readonly LOCK_FILE=${BREW_UPDATER_LOCK:-$STATE_DIR/lock.d}
 readonly RUNNER_PATH=${BREW_UPDATER_RUNNER_BIN:-$HOME_DIR/.local/bin/brew-update-run}
 
 # --- logging ----------------------------------------------------------------
