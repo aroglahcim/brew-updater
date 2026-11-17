@@ -8,6 +8,15 @@ Agents: read [`AGENTS.md`](AGENTS.md) for conventions and safety rules, and
 [`CONTRACT.md`](CONTRACT.md) for the stable behaviour contract. The plan for
 publishing through a Homebrew tap is in [`docs/PUBLISHING.md`](docs/PUBLISHING.md).
 
+## Requirements
+
+- macOS, with a logged-in desktop session for notifications.
+- Homebrew **6.0.0 or newer**. The click path runs `brew upgrade -y`
+  (`--no-ask`), and that flag does not exist in earlier releases.
+- `jq`, resolved from `/opt/homebrew/bin`, `/usr/local/bin`, `/usr/bin`, or
+  `PATH`. macOS ships it at `/usr/bin/jq`; `brew install jq` also works.
+- `terminal-notifier`, installed below.
+
 ## Install
 
 ```sh
@@ -16,6 +25,9 @@ brew install terminal-notifier
 ./install.sh --time 06:30    # or pick a time
 ./install.sh --dry-run       # render and validate only
 ```
+
+`jq` is usually already present at `/usr/bin/jq`. If it is missing, install it with
+`brew install jq`; the checker prefers the Homebrew copy.
 
 This links the scripts into `~/.local/bin`, renders the LaunchAgent into
 `~/Library/LaunchAgents`, validates it with `plutil -lint`, and loads it with
@@ -51,6 +63,7 @@ tail -f ~/Library/Logs/brew-updater/brew-updater.log
 ```
 
 Checks as usual and posts the notification even when the count is unchanged.
+
 ## Tests
 
 ```sh
@@ -86,3 +99,7 @@ The runner writes `~/.local/state/brew-updater/upgrade.command` and opens it wit
 `open -a Terminal`, so no Automation permission is involved. The script runs
 `brew upgrade -y`, which skips the interactive confirmation. The window stays open
 after the upgrade and shows the exit code.
+
+## License
+
+Apache License 2.0. See [`LICENSE`](LICENSE).
