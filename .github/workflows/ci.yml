@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: zsh syntax and mock-driven suite
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: zsh syntax check
+        run: |
+          set -e
+          for script in bin/brew-update-check bin/brew-update-run install.sh uninstall.sh \
+                        test/run-tests.sh test/click-notify.sh test/click-run.sh; do
+            zsh -n "$script"
+            echo "ok: $script"
+          done
+
+      - name: Mock-driven test suite
+        run: ./test/run-tests.sh
+
+  release:
+    name: semantic-release
+    needs: tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: release
+        uses: cycjimmy/semantic-release-action@v8
+        with:
+          branches: |
+            ["main"]
+          tag_format: "v${version}"
+          skip_npm_plugin: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dispatch to homebrew-tap
+        if: steps.release.outputs.new_release_published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TAP_DISPATCH_TOKEN }}
+          VERSION: ${{ steps.release.outputs.new_release_version }}
+          TAG: ${{ steps.release.outputs.new_release_git_tag }}
+        run: |
+          gh api repos/aroglahcim/homebrew-tap/dispatches \
+            -f event_type=brew-updater-release \
+            -f client_payload[version]="$VERSION" \
+            -f client_payload[tag]="$TAG"
