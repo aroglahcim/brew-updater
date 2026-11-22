@@ -63,23 +63,39 @@ xml_escape() {
 }
 
 # Report the home directory the account truly owns, bypassing $HOME.
+# `id -P` prints the passwd record with ':' separators; the home directory is
+# the second-to-last field, right before the login shell.
 real_home_dir() {
 	local record
-	record=$(/usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" NFSHomeDirectory 2>/dev/null) || return 1
-	record=${record##*:}
-	record=${record## }
-	[[ -n $record ]] || return 1
-	print -r -- "$record"
+	local -a fields
+	record=$(/usr/bin/id -P 2>/dev/null) || return 1
+	fields=("${(@s.:.)record}")
+	(( ${#fields} >= 2 )) || return 1
+	[[ ${fields[-2]} == /* ]] || return 1
+	print -r -- "${fields[-2]}"
+}
+
+# The user's real LaunchAgent directory must be writable. Homebrew denies all
+# file writes in post-install, so an unwritable directory is itself proof that
+# launchd setup cannot succeed here.
+agent_dir_writable() {
+	local probe=$AGENT_DIR/.brew-updater-write-probe
+	/bin/mkdir -p "$AGENT_DIR" 2>/dev/null || return 1
+	: >"$probe" 2>/dev/null || return 1
+	/bin/rm -f "$probe" 2>/dev/null
+	return 0
 }
 
 # Homebrew runs post-install inside a sandbox that points $HOME at a scratch
-# directory while keeping the real UID. The plist then lands nowhere the user
-# can see, and a launchctl bootout in there would unregister the live agent
-# without a way to load it back. Detecting the mismatch keeps that out.
+# directory while keeping the real UID. A plist rendered there lands nowhere the
+# user can see, and `launchctl bootout` still unregisters the live agent, while
+# `bootstrap` cannot run under the sandbox. This must fail closed: any doubt
+# means we skip, because guessing wrong silently deletes the user's schedule.
 in_homebrew_sandbox() {
 	local real
-	real=$(real_home_dir) || return 1
-	[[ $real != "$HOME_DIR" ]]
+	real=$(real_home_dir) || return 0
+	[[ $real != "$HOME_DIR" ]] && return 0
+	! agent_dir_writable
 }
 
 # Make the installed terminal-notifier app reachable from ~/Applications and ask
