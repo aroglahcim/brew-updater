@@ -62,6 +62,26 @@ xml_escape() {
 	print -r -- "$value"
 }
 
+# Report the home directory the account truly owns, bypassing $HOME.
+real_home_dir() {
+	local record
+	record=$(/usr/bin/dscl . -read "/Users/$(/usr/bin/id -un)" NFSHomeDirectory 2>/dev/null) || return 1
+	record=${record##*:}
+	record=${record## }
+	[[ -n $record ]] || return 1
+	print -r -- "$record"
+}
+
+# Homebrew runs post-install inside a sandbox that points $HOME at a scratch
+# directory while keeping the real UID. The plist then lands nowhere the user
+# can see, and a launchctl bootout in there would unregister the live agent
+# without a way to load it back. Detecting the mismatch keeps that out.
+in_homebrew_sandbox() {
+	local real
+	real=$(real_home_dir) || return 1
+	[[ $real != "$HOME_DIR" ]]
+}
+
 # Make the installed terminal-notifier app reachable from ~/Applications and ask
 # LaunchServices to notice it. Without this the app never appears under System
 # Settings > Notifications, so permission cannot be granted.
@@ -169,6 +189,20 @@ if (( DRY_RUN )); then
 	say 'rendered LaunchAgent:'
 	print -r -- "$rendered"
 	say 'dry run: nothing was changed'
+	exit 0
+fi
+
+# Refuse to touch launchd from inside Homebrew's post-install sandbox. There the
+# render targets a scratch HOME, so the plist is discarded, while the same UID
+# lets `launchctl bootout` unregister the user's real agent. Nothing in the
+# sandbox can bootstrap it again, so the harm is permanent.
+if in_homebrew_sandbox; then
+	say 'Homebrew sandbox detected: skipping the LaunchAgent'
+	print -r -- ''
+	print -r -- 'Homebrew runs post-install sandboxed, where launchd is unreachable.'
+	print -r -- 'Run this once outside Homebrew to install the schedule:'
+	print -r -- ''
+	print -r -- "  $REPO_DIR/install.sh --bin-dir $BIN_DIR"
 	exit 0
 fi
 
