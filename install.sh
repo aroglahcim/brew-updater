@@ -6,8 +6,10 @@
 # ~/Library/LaunchAgents with this machine's absolute paths, validates the
 # result, and loads it into the GUI session with launchctl bootstrap.
 #
-# Usage: ./install.sh [--time HH:MM] [--dry-run]
+# Usage: ./install.sh [--time HH:MM] [--bin-dir DIR] [--dry-run]
 #   --time HH:MM   time for the calendar trigger, 24h clock (default 07:00)
+#   --bin-dir DIR  use DIR instead of ~/.local/bin, and do not create symlinks;
+#                  a Homebrew tap already installed the executables there
 #   --dry-run      render and validate, print the plan, change nothing
 
 emulate -L zsh
@@ -20,7 +22,7 @@ readonly REPO_DIR=${0:A:h}
 export PATH='/usr/bin:/bin:/usr/sbin:/sbin'
 
 readonly HOME_DIR=${HOME:?HOME is not set}
-readonly BIN_DIR=$HOME_DIR/.local/bin
+readonly DEFAULT_BIN_DIR=$HOME_DIR/.local/bin
 readonly AGENT_DIR=$HOME_DIR/Library/LaunchAgents
 readonly AGENT_PLIST=$AGENT_DIR/$LABEL.plist
 readonly STATE_DIR=${BREW_UPDATER_STATE_DIR:-$HOME_DIR/.local/state/brew-updater}
@@ -29,13 +31,16 @@ readonly TEMPLATE=$REPO_DIR/launchd/$LABEL.plist.tmpl
 
 typeset -i DRY_RUN=0
 typeset -i TIME_H=7 TIME_M=0
+# Empty means the default layout: symlink our own executables into ~/.local/bin.
+typeset BIN_DIR_OVERRIDE=''
 
 usage() {
-	print -r -- "usage: $PROG_NAME [--time HH:MM] [--dry-run]"
+	print -r -- "usage: $PROG_NAME [--time HH:MM] [--bin-dir DIR] [--dry-run]"
 	print -r -- ''
 	print -r -- 'Installs symlinks in ~/.local/bin, renders and loads the LaunchAgent.'
 	print -r -- ''
 	print -r -- '  --time HH:MM   time for the calendar trigger, 24h clock (default 07:00)'
+	print -r -- '  --bin-dir DIR  use DIR instead of ~/.local/bin, and do not create symlinks'
 	print -r -- '  --dry-run      validate and report without changing anything'
 }
 
@@ -98,6 +103,12 @@ while (( $# )); do
 		DRY_RUN=1
 		shift
 		;;
+	--bin-dir)
+		[[ -n ${2:-} ]] || die '--bin-dir requires a directory'
+		[[ $2 == /* ]] || die "invalid directory: $2 (expected an absolute path)"
+		BIN_DIR_OVERRIDE=$2
+		shift 2
+		;;
 	--help|-h)
 		usage
 		exit 0
@@ -109,8 +120,18 @@ while (( $# )); do
 done
 
 [[ -f $TEMPLATE ]] || die "template not found: $TEMPLATE"
-[[ -x $REPO_DIR/bin/brew-update-check ]] || die "checker not executable: $REPO_DIR/bin/brew-update-check"
-[[ -x $REPO_DIR/bin/brew-update-run ]] || die "runner not executable: $REPO_DIR/bin/brew-update-run"
+
+if [[ -n $BIN_DIR_OVERRIDE ]]; then
+	readonly BIN_DIR=$BIN_DIR_OVERRIDE
+	# A tap installs the executables next to the formula, not beside this script,
+	# so the override is the only place they can be.
+	[[ -x $BIN_DIR/brew-update-check ]] || die "checker not executable: $BIN_DIR/brew-update-check"
+	[[ -x $BIN_DIR/brew-update-run ]] || die "runner not executable: $BIN_DIR/brew-update-run"
+else
+	readonly BIN_DIR=$DEFAULT_BIN_DIR
+	[[ -x $REPO_DIR/bin/brew-update-check ]] || die "checker not executable: $REPO_DIR/bin/brew-update-check"
+	[[ -x $REPO_DIR/bin/brew-update-run ]] || die "runner not executable: $REPO_DIR/bin/brew-update-run"
+fi
 
 say "repository: $REPO_DIR"
 say "calendar trigger: $(printf '%02d:%02d' $TIME_H $TIME_M)"
@@ -122,6 +143,24 @@ rendered=${rendered//@@CHECKER@@/$(xml_escape "$BIN_DIR/brew-update-check")}
 rendered=${rendered//@@LOG@@/$(xml_escape "$LOG_DIR")}
 rendered=${rendered//@@TIME_H@@/$TIME_H}
 rendered=${rendered//@@TIME_M@@/$TIME_M}
+
+# The checker resolves the click target from BREW_UPDATER_RUNNER_BIN, falling
+# back to ~/.local/bin. A tap puts the runner in opt/<formula>/bin, so the agent
+# has to carry the path explicitly. The default layout needs no entry: the
+# checker's own default already points at the symlink.
+if [[ -n $BIN_DIR_OVERRIDE ]]; then
+	environment=$(
+		print -r -- '	<key>EnvironmentVariables</key>'
+		print -r -- '	<dict>'
+		print -r -- '		<key>BREW_UPDATER_RUNNER_BIN</key>'
+		print -r -- "		<string>$(xml_escape "$BIN_DIR/brew-update-run")</string>"
+		print -r -- '	</dict>'
+	)
+else
+	environment=''
+fi
+rendered=${rendered//@@ENVIRONMENT@@/$environment}
+
 if [[ $rendered == *@@* ]]; then
 	die 'unsubstituted template token remains in rendered plist'
 fi
@@ -133,11 +172,16 @@ if (( DRY_RUN )); then
 	exit 0
 fi
 
-mkdir -p "$BIN_DIR" "$AGENT_DIR" "$STATE_DIR" "$LOG_DIR"
+mkdir -p "$AGENT_DIR" "$STATE_DIR" "$LOG_DIR"
 
-say "linking into $BIN_DIR"
-ln -sfn "$REPO_DIR/bin/brew-update-check" "$BIN_DIR/brew-update-check"
-ln -sfn "$REPO_DIR/bin/brew-update-run" "$BIN_DIR/brew-update-run"
+if [[ -z $BIN_DIR_OVERRIDE ]]; then
+	mkdir -p "$BIN_DIR"
+	say "linking into $BIN_DIR"
+	ln -sfn "$REPO_DIR/bin/brew-update-check" "$BIN_DIR/brew-update-check"
+	ln -sfn "$REPO_DIR/bin/brew-update-run" "$BIN_DIR/brew-update-run"
+else
+	say "using executables from $BIN_DIR (no symlinks created)"
+fi
 
 # macOS resolves UserNotification authorization through LaunchServices, which only
 # scans /Applications and ~/Applications. A Homebrew keg lives in Cellar, so the
