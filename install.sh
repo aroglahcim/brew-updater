@@ -120,13 +120,17 @@ while (( $# )); do
 done
 
 [[ -f $TEMPLATE ]] || die "template not found: $TEMPLATE"
-[[ -x $REPO_DIR/bin/brew-update-check ]] || die "checker not executable: $REPO_DIR/bin/brew-update-check"
-[[ -x $REPO_DIR/bin/brew-update-run ]] || die "runner not executable: $REPO_DIR/bin/brew-update-run"
 
 if [[ -n $BIN_DIR_OVERRIDE ]]; then
 	readonly BIN_DIR=$BIN_DIR_OVERRIDE
+	# A tap installs the executables next to the formula, not beside this script,
+	# so the override is the only place they can be.
+	[[ -x $BIN_DIR/brew-update-check ]] || die "checker not executable: $BIN_DIR/brew-update-check"
+	[[ -x $BIN_DIR/brew-update-run ]] || die "runner not executable: $BIN_DIR/brew-update-run"
 else
 	readonly BIN_DIR=$DEFAULT_BIN_DIR
+	[[ -x $REPO_DIR/bin/brew-update-check ]] || die "checker not executable: $REPO_DIR/bin/brew-update-check"
+	[[ -x $REPO_DIR/bin/brew-update-run ]] || die "runner not executable: $REPO_DIR/bin/brew-update-run"
 fi
 
 say "repository: $REPO_DIR"
